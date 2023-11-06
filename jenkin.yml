@@ -1,0 +1,110 @@
+- name: "Jenkins Installation Playbook"
+  hosts: all
+  vars:
+      req_pkg: "fontconfig"
+      rhel_jdk: "java-11-openjdk"
+      aws_jdk_url: "https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.rpm"
+      aws_jdk: "/tmp/amazon-corretto-11-x64-linux-jdk.rpm"
+      deb_jdk: "openjdk-11-jre"
+      jenkin_soft: "jenkins"
+      pass_location: "/var/lib/jenkins/secrets/initialAdminPassword"
+      apt_keys: "https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key"
+      rpm_repo_url: "https://pkg.jenkins.io/redhat-stable/jenkins.repo"
+      rpm_keys: "https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key"
+      apt_key_dest: "/usr/share/keyrings/jenkins-keyring.asc"
+  tasks:
+  - name: "yum configuration for RHEL/Centos"
+    get_url:
+       url: "{{rpm_repo_url}}"
+       dest: "/etc/yum.repos.d/jenkins.repo"
+    when: (ansible_distribution == "RedHat") or (ansible_distribution == "Centos") or (ansible_distribution == "Amazon")
+  - name: "gpg key download for RHEL/Centos"
+    rpm_key:
+       key: "{{rpm_keys}}"
+       state: present
+    when: (ansible_distribution== "RedHat") or (ansible_distribution == "Centos") or (ansible_distribution == "Amazon")
+
+  - name: " asc key download for ubuntu repository"
+    get_url:
+      url: "{{apt_keys}}"
+      dest: "{{apt_key_dest}}"
+    when: (ansible_distribution== "Ubuntu")
+
+  - name: "apt configuration  for Ubuntu"
+    apt_repository:
+      repo: "deb [signed-by={{apt_key_dest}}]  https://pkg.jenkins.io/debian-stable binary/ "
+      state: present
+    when: (ansible_distribution== "Ubuntu")
+
+  - name: "rpm file download of amazon coretto for Amazon linux java compiler"
+    get_url:
+      url: "{{aws_jdk_url}}"
+      dest: "{{aws_jdk}}"
+    when: (ansible_distribution== "Amazon")
+
+
+  - name: "gpg key download for Amazon coretto"
+    rpm_key:
+      key: "https://corretto.aws/downloads/resources/11.0.6.10.1/B04F24E3.pub"
+      state: present
+    when: (ansible_distribution == "Amazon")
+
+  - name: "Install Amazon Coretto& require package for Amazon Linux"
+    yum:
+      name: "{{item}}"
+      state: present
+    register: out_aws_pack
+    loop:
+      - "{{req_pkg}}"
+      - "{{aws_jdk}}"
+    when: (ansible_distribution== "Amazon")
+
+  - name: "Required Software Install for Rhel/centos"
+    yum:
+      name: "{{item}}"
+      state: present
+    register: out_rhel_pack
+    when: (ansible_distribution == "RedHat") or (ansible_distribution == "Centos")
+    loop:
+     - "{{req_pkg}}"
+     - "{{rhel_jdk}}"
+
+  - name: "Required Software Install for Ubuntu"
+    apt:
+      name: "{{item}}"
+      state: present
+    register: out_ubuntu_pack
+    when: (ansible_distribution == "Ubuntu")
+    loop:
+     - "{{req_pkg}}"
+     - "{{deb_jdk}}"
+
+  - name: " Install jenkin on the rhel  server"
+    yum:
+      name: "{{jenkin_soft}}"
+      state: present
+    when:  ((ansible_distribution == "RedHat") or  (ansible_distribution == "Amazon"))
+         # when: (((out_rhel_pack['results'][0].rc == 0) and (out_rhel_pack['results'][1].rc == 0)) or out_rhel_pack['skipped']== "fasle") or (((out_aws_pack['results'][0].rc == 0) and (out_aws_pack['results'][1].rc == 0)) or out_awspack['skipped']== "false" )
+
+  - name: "Install jenkins over Ubuntu"
+    apt:
+      name: "{{jenkin_soft}}"
+      state: present
+    when: (ansible_distribution == "Ubuntu") #((out_ubuntu_pack['results'][0].rc == 0) and (out_ubuntu_pack['results'][1].rc == 0))
+
+  - name: " Jenkins server start"
+    service:
+       name: "{{jenkin_soft}}"
+       state: started
+       enabled: yes
+
+
+  - name: "fetch password"
+    fetch:
+      src: "{{pass_location}}"
+      dest: "/tmp/"
+
+
+  - name: "Get Jenkins Inital  Password"
+    debug:
+      msg : "This is Your InitialAdminPassword of Jenkins on {{ansible_distribution}}  for I.P {{ansible_default_ipv4.address}}  :- {{ lookup('file','/tmp/{{ansible_default_ipv4.address}}{{pass_location}}')}}"
